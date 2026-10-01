@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Thin shared plumbing: outbox, inbox, idempotency, messaging, service defaults. No domain code. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="AWSSDK.SQS" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BookYourShow.Contracts\BookYourShow.Contracts.csproj" />
+  </ItemGroup>
+</Project>

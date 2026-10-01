@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Event and DTO contracts shared between services. No dependencies on purpose. -->
+</Project>

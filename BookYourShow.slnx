@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/BookYourShow.BuildingBlocks/BookYourShow.BuildingBlocks.csproj" />
+    <Project Path="src/BuildingBlocks/BookYourShow.Contracts/BookYourShow.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Booking/">
+    <Project Path="src/Services/Booking/Booking.Api/Booking.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Catalog/">
+    <Project Path="src/Services/Catalog/Catalog.Api/Catalog.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Payment/">
+    <Project Path="src/Services/Payment/Payment.Api/Payment.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Realtime/">
+    <Project Path="src/Services/Realtime/Realtime.Api/Realtime.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/SeatInventory/">
+    <Project Path="src/Services/SeatInventory/SeatInventory.Api/SeatInventory.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Booking.Tests/Booking.Tests.csproj" />
+    <Project Path="tests/SeatInventory.Tests/SeatInventory.Tests.csproj" />
+  </Folder>
+</Solution>

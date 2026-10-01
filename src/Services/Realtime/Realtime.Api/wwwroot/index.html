@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BookYourShow — live seat map (dev demo)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 24px; color: #1d1d1f; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  input { padding: 6px 8px; width: 290px; }
+  button { padding: 6px 12px; cursor: pointer; }
+  #map { display: grid; gap: 4px; margin: 16px 0; }
+  .seat { width: 26px; height: 26px; border-radius: 6px; border: 1px solid #999; font-size: 9px; display: grid; place-items: center; cursor: pointer; background: #fff; }
+  .seat.held { background: #f5c26b; cursor: not-allowed; }
+  .seat.booked { background: #c9c9c9; color: #777; cursor: not-allowed; }
+  .seat.mine { background: #4f8cff; color: #fff; }
+  .seat.selected { outline: 3px solid #4f8cff; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #f6f6f6; padding: 10px; max-height: 240px; overflow: auto; }
+  .legend span { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin: 0 4px 0 12px; vertical-align: middle; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<h2>BookYourShow — live seat map</h2>
+<p>Open this page in two browser windows with different user ids to watch holds and sales appear in real time.</p>
+<div class="bar">
+  <label>Show id <input id="showId" placeholder="paste the showId printed by scripts/seed.sh"></label>
+  <label>User <input id="userId" style="width:120px"></label>
+  <button id="load">Load</button>
+</div>
+<div class="legend">Free<span></span> Held by others<span style="background:#f5c26b"></span> Mine<span style="background:#4f8cff"></span> Sold<span style="background:#c9c9c9"></span></div>
+<div id="map"></div>
+<div class="bar">
+  <button id="hold">Hold selected</button>
+  <button id="book">Create booking</button>
+  <button id="pay">Pay (simulate success)</button>
+  <button id="fail">Pay (simulate failure)</button>
+  <button id="release">Release hold</button>
+</div>
+<div id="log"></div>
+<script>
+const api = { catalog: 'http://localhost:5101', inventory: 'http://localhost:5102', booking: 'http://localhost:5103', payment: 'http://localhost:5104' };
+const $ = id => document.getElementById(id);
+$('userId').value = 'user-' + Math.random().toString(36).slice(2, 7);
+let showId, seq = 0, selected = new Set(), hold = null, booking = null, held = new Set(), booked = new Set(), mine = new Set();
+const log = m => { $('log').textContent = new Date().toLocaleTimeString() + '  ' + m + '\n' + $('log').textContent; };
+const headers = (idem) => ({ 'Content-Type': 'application/json', 'X-User-Id': $('userId').value, ...(idem ? { 'Idempotency-Key': crypto.randomUUID() } : {}) });
+async function call(url, opts = {}) {
+  const r = await fetch(url, opts); const text = await r.text(); const body = text ? JSON.parse(text) : null;
+  if (!r.ok) throw new Error(`${r.status} ${body?.detail ?? body?.title ?? text}`); return body;
+}
+
+async function load() {
+  showId = $('showId').value.trim();
+  const layout = await call(`${api.catalog}/shows/${showId}/layout`);
+  const map = $('map'); map.innerHTML = '';
+  map.style.gridTemplateColumns = `repeat(${Math.max(...layout.rows.map(r => r.seats.length))}, 26px)`;
+  for (const row of layout.rows) for (const s of row.seats) {
+    const id = row.row + s.number, el = document.createElement('div');
+    el.className = 'seat'; el.id = 'seat-' + id; el.textContent = id; el.title = `${id} · ${s.category}`;
+    el.onclick = () => { if (held.has(id) || booked.has(id)) return; selected.has(id) ? selected.delete(id) : selected.add(id); paint(); };
+    map.appendChild(el);
+  }
+  await snapshot(); await connect();
+}
+
+async function snapshot() {
+  const s = await call(`${api.inventory}/shows/${showId}/availability`);
+  seq = s.sequence; booked = new Set(s.booked); held = new Set(s.held); paint();
+  log(`snapshot seq=${seq}: ${booked.size} sold, ${held.size} held`);
+}
+
+function paint() {
+  document.querySelectorAll('.seat').forEach(el => {
+    const id = el.textContent;
+    el.className = 'seat' + (mine.has(id) ? ' mine' : booked.has(id) ? ' booked' : held.has(id) ? ' held' : '') + (selected.has(id) ? ' selected' : '');
+  });
+}
+
+let connection;
+async function connect() {
+  if (connection) await connection.stop();
+  connection = new signalR.HubConnectionBuilder()
+    .withUrl('/hub', { skipNegotiation: true, transport: signalR.HttpTransportType.WebSockets })
+    .withAutomaticReconnect().build();
+  connection.on('seatsChanged', async msg => {
+    if (msg.fromSeq > seq + 1) { log(`gap ${seq}→${msg.fromSeq}, re-syncing`); return snapshot(); }
+    for (const c of msg.changes) {
+      if (c.seq <= seq) continue;
+      for (const id of c.seats) {
+        if (c.change === 'held') held.add(id);
+        if (c.change === 'released') held.delete(id);
+        if (c.change === 'sold') { held.delete(id); booked.add(id); }
+        if (c.change === 'unsold') booked.delete(id);
+      }
+      seq = c.seq; log(`live: ${c.change} ${c.seats.join(',')} (seq ${c.seq})`);
+    }
+    paint();
+  });
+  connection.onreconnected(() => connection.invoke('JoinShow', showId).then(snapshot));
+  await connection.start(); await connection.invoke('JoinShow', showId);
+  log('connected to realtime hub');
+}
+
+async function guard(fn) { try { await fn(); } catch (e) { log('ERROR ' + e.message); } }
+$('load').onclick = () => guard(load);
+$('hold').onclick = () => guard(async () => {
+  hold = await call(`${api.inventory}/shows/${showId}/holds`, { method: 'POST', headers: headers(true), body: JSON.stringify({ seatIds: [...selected] }) });
+  mine = new Set(hold.seatIds); selected.clear(); paint();
+  log(`hold ${hold.holdId} until ${new Date(hold.expiresAt).toLocaleTimeString()}`);
+});
+$('book').onclick = () => guard(async () => {
+  const r = await call(`${api.booking}/bookings`, { method: 'POST', headers: headers(true), body: JSON.stringify({ showId, holdId: hold.holdId }) });
+  booking = r.booking; log(`booking ${booking.bookingId} ${booking.status}, total ${booking.totalMinor / 100} ${booking.currency}, payment ${r.payment?.paymentId}`);
+  booking.paymentId = r.payment?.paymentId ?? booking.paymentId;
+});
+const pay = outcome => guard(async () => {
+  await call(`${api.payment}/dev/payments/${booking.paymentId}/simulate?outcome=${outcome}`, { method: 'POST' });
+  for (let i = 0; i < 20; i++) {
+    const b = await call(`${api.booking}/bookings/${booking.bookingId}`, { headers: headers(false) });
+    if (b.status !== 'PENDING_PAYMENT') { log(`booking ${b.status}${b.failureReason ? ' — ' + b.failureReason : ''}`); if (b.status !== 'CONFIRMED') mine.clear(); paint(); return; }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  log('still pending; reconciliation will settle it');
+});
+$('pay').onclick = () => pay('succeeded');
+$('fail').onclick = () => pay('failed');
+$('release').onclick = () => guard(async () => {
+  await call(`${api.inventory}/shows/${showId}/holds/${hold.holdId}`, { method: 'DELETE', headers: headers(false) });
+  mine.clear(); paint(); log('hold released');
+});
+</script>
+</body>
+</html>

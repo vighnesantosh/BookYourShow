@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Services\Booking\Booking.Api\Booking.Api.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\db\init\03-booking.sql" Link="Sql\03-booking.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

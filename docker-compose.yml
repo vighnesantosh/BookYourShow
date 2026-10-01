@@ -1,0 +1,101 @@
+# Local stack for the core booking path. AWS equivalents in brackets.
+#   docker compose up --build        then   ./scripts/seed.sh
+#   Demo seat map: http://localhost:5105
+name: bookyourshow
+
+x-service: &service
+  build: { context: . }
+  restart: unless-stopped
+  environment: &env
+    ASPNETCORE_ENVIRONMENT: Development
+    AWS__ServiceUrl: http://localstack:4566
+    AWS__Region: us-east-1
+    Messaging__TopicArn: arn:aws:sns:us-east-1:000000000000:bys-events
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  depends_on: &deps
+    postgres: { condition: service_healthy }
+    valkey: { condition: service_healthy }
+    localstack: { condition: service_healthy }
+
+services:
+  postgres:                     # [Aurora PostgreSQL]
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+
+  valkey:                       # [ElastiCache for Valkey]
+    image: valkey/valkey:8
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  localstack:                   # [SNS + SQS]
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sns,sqs
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+    ports: ["4566:4566"]
+    volumes:
+      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 3s
+      retries: 40
+
+  otel-collector:               # [ADOT collector -> X-Ray / CloudWatch / Managed Prometheus]
+    image: otel/opentelemetry-collector:latest
+    ports: ["4317:4317"]
+
+  catalog:
+    <<: *service
+    build: { context: ., args: { SERVICE: Catalog, PROJECT: Catalog.Api } }
+    ports: ["5101:8080"]
+    environment:
+      <<: *env
+      ConnectionStrings__Catalog: Host=postgres;Database=catalog;Username=postgres;Password=postgres
+
+  inventory:
+    <<: *service
+    build: { context: ., args: { SERVICE: SeatInventory, PROJECT: SeatInventory.Api } }
+    ports: ["5102:8080"]
+    environment:
+      <<: *env
+      ConnectionStrings__Inventory: Host=postgres;Database=inventory;Username=postgres;Password=postgres
+      ConnectionStrings__Valkey: valkey:6379,abortConnect=false
+
+  booking:
+    <<: *service
+    build: { context: ., args: { SERVICE: Booking, PROJECT: Booking.Api } }
+    ports: ["5103:8080"]
+    environment:
+      <<: *env
+      ConnectionStrings__Booking: Host=postgres;Database=booking;Username=postgres;Password=postgres
+      Services__Catalog: http://catalog:8080
+      Services__Inventory: http://inventory:8080
+      Services__Payment: http://payment:8080
+
+  payment:
+    <<: *service
+    build: { context: ., args: { SERVICE: Payment, PROJECT: Payment.Api } }
+    ports: ["5104:8080"]
+    environment:
+      <<: *env
+      ConnectionStrings__Payment: Host=postgres;Database=payment;Username=postgres;Password=postgres
+
+  realtime:
+    <<: *service
+    build: { context: ., args: { SERVICE: Realtime, PROJECT: Realtime.Api } }
+    ports: ["5105:8080"]
+    environment:
+      <<: *env
+      ConnectionStrings__Valkey: valkey:6379,abortConnect=false
+      ConnectionStrings__Backplane: valkey:6379,abortConnect=false
